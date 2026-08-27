@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-paper text-ink font-sans; font-size: 17px; }
+  :focus-visible { outline: 3px solid #0E7C78; outline-offset: 2px; }
+}
+
+@layer utilities {
+  .tap-target { min-height: 56px; min-width: 56px; }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #E4DFD3; border-radius: 4px; }
+}

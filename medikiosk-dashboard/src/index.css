@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans;
+  }
+  :focus-visible {
+    outline: 2px solid #0E7C86;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-border rounded-xl2 shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-dark px-4 py-2.5 text-sm;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink border border-border hover:bg-canvas px-4 py-2.5 text-sm;
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-danger/90 px-4 py-2.5 text-sm;
+  }
+  .btn-ghost {
+    @apply btn text-ink-soft hover:bg-canvas px-3 py-2 text-sm;
+  }
+  .input {
+    @apply w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none transition;
+  }
+  .label-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-wide text-ink-faint;
+  }
+}
