@@ -26,7 +26,7 @@ app.use(express.json({ limit: "10mb" }));
 
 app.use(morgan("dev"));
 
-app.get("/health", (req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "medikiosk-backend",
