@@ -13,11 +13,32 @@ import miscRoutes from "./routes/misc.js";
 
 const app = express();
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:5173";
+// Allowed CORS origins
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: CORS_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests without Origin header (curl/server-to-server)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow explicitly configured origins
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel dashboard deployments
+      if (/^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked: ${origin}`));
+    },
     credentials: true,
   }),
 );
