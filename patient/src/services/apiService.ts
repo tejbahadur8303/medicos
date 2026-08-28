@@ -1,5 +1,6 @@
 const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://medikiosk-backend.vercel.app/api";
 
 async function request<T>(
   path: string,
@@ -13,7 +14,7 @@ async function request<T>(
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   const data = await res.json();
@@ -24,9 +25,8 @@ async function request<T>(
     );
   }
 
-  // Backend sometimes returns { success, data }
-  // and intake APIs return { ok, ...data }
-  if ("data" in data) {
+  // APIs that return { data: ... }
+  if (data && typeof data === "object" && "data" in data) {
     return data.data;
   }
 
@@ -34,16 +34,25 @@ async function request<T>(
 }
 
 export const api = {
+  // =========================
   // Auth
-  login: (email: string, password: string) =>
-    request<{ token: string; user: unknown }>("/auth/login", "POST", {
-      email,
-      password,
-    }),
+  // =========================
 
+login: (email: string, password: string) =>
+  request<{
+    token: string;
+    doctor: unknown;
+    user?: unknown;
+  }>("/auth/login", "POST", {
+    email,
+    password,
+  }),
+
+  // =========================
   // Doctors
-  listDoctors: () =>
-    request<{ doctors: unknown[] }>("/doctors", "GET"),
+  // =========================
+
+  listDoctors: () => request<{ doctors: unknown[] }>("/doctors", "GET"),
 
   getDoctorById: (id: string) =>
     request<{ doctor: unknown }>(`/doctors/${id}`, "GET"),
@@ -54,7 +63,10 @@ export const api = {
       "GET",
     ),
 
+  // =========================
   // Appointments
+  // =========================
+
   bookAppointment: (
     payload: {
       doctorId: string;
@@ -64,12 +76,7 @@ export const api = {
     },
     token: string,
   ) =>
-    request<{ appointment: unknown }>(
-      "/appointments",
-      "POST",
-      payload,
-      token,
-    ),
+    request<{ appointment: unknown }>("/appointments", "POST", payload, token),
 
   getMyAppointments: (token: string) =>
     request<{ appointments: unknown[] }>(
@@ -95,21 +102,34 @@ export const api = {
       token,
     ),
 
+  // =========================
   // Patient Intake
-  submitSession: (payload: unknown) =>
-    request<unknown>(
-      "/session/submit",
-      "POST",
-      payload,
-    ),
+  // =========================
 
-  alertRedFlag: (payload: {
-    patientId: string;
-    redFlags: unknown[];
+  // Create patient immediately after registration
+  createSession: (payload: {
+    name: string;
+    age: number;
+    gender: string;
+    mobileNumber: string;
+    abhaId?: string;
+    language?: string;
+    isGuest?: boolean;
+    consent?: {
+      given: boolean;
+    };
   }) =>
-    request<{ ok: boolean }>(
-      "/redflag/alert",
-      "POST",
-      payload,
-    ),
+    request<{
+      sessionId: string;
+      token: string;
+      ok: boolean;
+    }>("/patient/session", "POST", payload),
+
+  // Submit completed intake session
+  submitSession: (payload: unknown) =>
+    request<unknown>("/session/submit", "POST", payload),
+
+  // Red flag alert
+  alertRedFlag: (payload: { patientId: string; redFlags: unknown[] }) =>
+    request<{ ok: boolean }>("/redflag/alert", "POST", payload),
 };

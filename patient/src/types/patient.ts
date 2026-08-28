@@ -1,4 +1,5 @@
 export type Language = "en" | "hi";
+
 export type Gender = "Male" | "Female" | "Other";
 
 export interface Patient {
@@ -9,6 +10,8 @@ export interface Patient {
   abhaId?: string;
   language: Language;
   isGuest: boolean;
+  sessionId?: string;
+  token?: string;
 }
 
 export interface ConsentState {
