@@ -1,7 +1,11 @@
 import { MedicalDocument } from '../models/MedicalDocument.js';
 import { Patient } from '../models/Patient.js';
+import { TimelineEvent } from '../models/TimelineEvent.js';
 import { Notification } from '../models/Notification.js';
-import { evaluateRedFlags, priorityFromFlags } from '../services/redFlagService.js';
+import {
+  evaluateRedFlags,
+  priorityFromFlags,
+} from '../services/redFlagService.js';
 import { emitToDoctors } from '../sockets/index.js';
 
 let tokenCounter = 100;
@@ -27,6 +31,12 @@ export async function createSession(req, res, next) {
       consent,
     } = req.body;
 
+    if (!name || age === undefined || !gender) {
+      return res.status(400).json({
+        error: 'name, age and gender are required',
+      });
+    }
+
     const patient = await Patient.create({
       token: nextToken(),
       name,
@@ -34,8 +44,8 @@ export async function createSession(req, res, next) {
       gender,
       mobileNumber,
       abhaId,
-      language,
-      isGuest,
+      language: language || 'en',
+      isGuest: Boolean(isGuest),
       consent: consent || { given: false },
       status: 'NEW',
     });
@@ -61,7 +71,18 @@ export async function createSession(req, res, next) {
  */
 export async function submitAnswer(req, res, next) {
   try {
-    const { sessionId, questionId, category, value } = req.body;
+    const {
+      sessionId,
+      questionId,
+      category,
+      value,
+    } = req.body;
+
+    if (!sessionId || !questionId) {
+      return res.status(400).json({
+        error: 'sessionId and questionId are required',
+      });
+    }
 
     const patient = await Patient.findById(sessionId);
 
@@ -76,15 +97,14 @@ export async function submitAnswer(req, res, next) {
 
     patient.historyOfPresentIllness[questionId] = value;
 
-    if (category) {
-      patient.markModified('historyOfPresentIllness');
-    }
+    patient.markModified('historyOfPresentIllness');
 
     const flags = evaluateRedFlags(
       patient.historyOfPresentIllness,
     );
 
-    const previousFlagCount = patient.redFlags?.length || 0;
+    const previousFlagCount =
+      patient.redFlags?.length || 0;
 
     patient.redFlags = flags;
     patient.priority = priorityFromFlags(flags);
@@ -145,6 +165,12 @@ export async function generateSummary(req, res, next) {
       reviewOfSystems,
     } = req.body;
 
+    if (!sessionId) {
+      return res.status(400).json({
+        error: 'sessionId is required',
+      });
+    }
+
     const patient = await Patient.findById(sessionId);
 
     if (!patient) {
@@ -154,28 +180,28 @@ export async function generateSummary(req, res, next) {
     }
 
     patient.chiefComplaint =
-      chiefComplaint ?? patient.chiefComplaint;
+      chiefComplaint ?? patient.chiefComplaint ?? '';
 
     patient.pastHistory =
-      pastHistory ?? patient.pastHistory;
+      pastHistory ?? patient.pastHistory ?? [];
 
     patient.medications =
-      medications ?? patient.medications;
+      medications ?? patient.medications ?? [];
 
     patient.allergies =
-      allergies ?? patient.allergies;
+      allergies ?? patient.allergies ?? [];
 
     patient.familyHistory =
-      familyHistory ?? patient.familyHistory;
+      familyHistory ?? patient.familyHistory ?? [];
 
     patient.personalHistory =
-      personalHistory ?? patient.personalHistory;
+      personalHistory ?? patient.personalHistory ?? {};
 
     patient.reviewOfSystems =
-      reviewOfSystems ?? patient.reviewOfSystems;
+      reviewOfSystems ?? patient.reviewOfSystems ?? {};
 
     const flags = evaluateRedFlags(
-      patient.historyOfPresentIllness,
+      patient.historyOfPresentIllness || {},
     );
 
     patient.redFlags = flags;
@@ -250,7 +276,7 @@ export async function generateSummary(req, res, next) {
  * POST /api/session/submit
  *
  * Final Flutter step.
- * Saves uploaded documents into MedicalDocument collection.
+ * Saves documents and creates timeline events.
  */
 export async function submitSession(req, res, next) {
   try {
@@ -260,6 +286,12 @@ export async function submitSession(req, res, next) {
       redFlags,
     } = req.body;
 
+    if (!sessionId) {
+      return res.status(400).json({
+        error: 'sessionId is required',
+      });
+    }
+
     const patient = await Patient.findById(sessionId);
 
     if (!patient) {
@@ -268,81 +300,153 @@ export async function submitSession(req, res, next) {
       });
     }
 
+    let savedDocuments = 0;
+    let savedTimelineEvents = 0;
+
     /*
      * Save uploaded documents
-     * ---------------------------------
-     * Flutter sends documents as an array.
-     * Each document is converted into a MedicalDocument
-     * linked to this patient.
      */
-    if (Array.isArray(documents) && documents.length > 0) {
+    if (Array.isArray(documents)) {
       for (const document of documents) {
         try {
+          if (!document || typeof document !== 'object') {
+            continue;
+          }
+
           const typeMap = {
             prescription: 'Prescription',
             lab_report: 'Lab Report',
             discharge_summary: 'Discharge Summary',
             scan_imaging: 'Imaging Report',
+
+            Prescription: 'Prescription',
+            'Lab Report': 'Lab Report',
+            'Discharge Summary': 'Discharge Summary',
+            'Imaging Report': 'Imaging Report',
           };
 
           const documentType =
             typeMap[document.category] ||
-            document.type ||
+            typeMap[document.type] ||
             'Lab Report';
 
+          /*
+           * Accept multiple possible frontend names.
+           */
           const fileUrl =
             document.fileUrl ||
             document.url ||
+            document.downloadUrl ||
             document.previewUrl ||
+            document.path ||
             '';
 
           /*
            * MedicalDocument requires fileUrl.
-           * If the frontend only has local preview data,
-           * don't create an invalid MongoDB document.
+           *
+           * If the Flutter app sends only a local file path,
+           * MongoDB cannot display that file later.
+           *
+           * But we still keep the document data when a real URL
+           * is supplied.
            */
           if (!fileUrl) {
             console.warn(
-              'Skipping document because fileUrl is missing:',
+              '[document] skipped: no fileUrl/url',
               document,
             );
             continue;
           }
 
-          await MedicalDocument.create({
+          const extractedData =
+            document.extractedData ||
+            {};
+
+          const ocrResult =
+            document.ocrResult ||
+            {};
+
+          const fields =
+            ocrResult.labValues ||
+            extractedData.fields ||
+            document.fields ||
+            [];
+
+          const diagnosesNoted =
+            ocrResult.diagnoses ||
+            extractedData.diagnosesNoted ||
+            document.diagnosesNoted ||
+            [];
+
+          const medicationsNoted =
+            ocrResult.medications ||
+            extractedData.medicationsNoted ||
+            document.medicationsNoted ||
+            [];
+
+          const savedDocument =
+            await MedicalDocument.create({
+              patient: patient._id,
+
+              type: documentType,
+
+              title:
+                document.title ||
+                document.name ||
+                document.fileName ||
+                documentType,
+
+              date:
+                document.uploadedAt ||
+                document.date ||
+                new Date(),
+
+              fileUrl,
+
+              extractedData: {
+                fields,
+                diagnosesNoted,
+                medicationsNoted,
+              },
+
+              status:
+                document.ocrStatus === 'done' ||
+                document.status === 'processed'
+                  ? 'processed'
+                  : 'pending',
+            });
+
+          savedDocuments += 1;
+
+          /*
+           * Create timeline event for every saved document.
+           */
+          await TimelineEvent.create({
             patient: patient._id,
-            type: documentType,
-            title:
-              document.title ||
-              document.name ||
-              documentType,
             date:
               document.uploadedAt ||
               document.date ||
               new Date(),
-            fileUrl,
-            extractedData: {
-              fields:
-                document.ocrResult?.labValues ||
-                document.extractedData?.fields ||
-                [],
-              diagnosesNoted:
-                document.ocrResult?.diagnoses ||
-                document.extractedData?.diagnosesNoted ||
-                [],
-              medicationsNoted:
-                document.ocrResult?.medications ||
-                document.extractedData?.medicationsNoted ||
-                [],
-            },
-            status:
-              document.ocrStatus === 'done'
-                ? 'processed'
-                : 'pending',
+
+            label:
+              document.title ||
+              document.name ||
+              document.fileName ||
+              documentType,
+
+            type: documentType,
+
+            detail:
+              document.description ||
+              `${documentType} uploaded by patient`,
+
+            document: savedDocument._id,
           });
+
+          savedTimelineEvents += 1;
         } catch (documentError) {
           console.error(
-            'Failed to save document:',
+            '[document] failed to save:',
             documentError,
           );
         }
@@ -350,11 +454,34 @@ export async function submitSession(req, res, next) {
     }
 
     /*
-     * Red flags
+     * Save red flags
      */
-    if (Array.isArray(redFlags) && redFlags.length > 0) {
+    if (Array.isArray(redFlags)) {
       patient.redFlags = redFlags;
-      patient.priority = 'priority';
+
+      if (redFlags.length > 0) {
+        patient.priority = 'priority';
+      }
+    }
+
+    /*
+     * Add current OPD visit to timeline.
+     */
+    try {
+      await TimelineEvent.create({
+        patient: patient._id,
+        date: new Date(),
+        label: 'Current OPD Visit',
+        type: 'Current OPD Visit',
+        detail: 'Patient completed kiosk intake and submitted history.',
+      });
+
+      savedTimelineEvents += 1;
+    } catch (timelineError) {
+      console.error(
+        '[timeline] failed to create OPD event:',
+        timelineError,
+      );
     }
 
     patient.status =
@@ -371,9 +498,6 @@ export async function submitSession(req, res, next) {
       priority: patient.priority,
     });
 
-    /*
-     * Tell dashboard that documents may have changed.
-     */
     emitToDoctors('patient:updated', {
       patientId: patient._id,
     });
@@ -382,6 +506,8 @@ export async function submitSession(req, res, next) {
       ok: true,
       patientId: patient._id,
       tokenNumber: patient.token,
+      savedDocuments,
+      savedTimelineEvents,
     });
   } catch (err) {
     next(err);
@@ -393,9 +519,13 @@ export async function submitSession(req, res, next) {
  */
 export async function alertRedFlag(req, res, next) {
   try {
-    const { patientId, flags } = req.body;
+    const {
+      patientId,
+      flags,
+    } = req.body;
 
-    const patient = await Patient.findById(patientId);
+    const patient =
+      await Patient.findById(patientId);
 
     if (!patient) {
       return res.status(404).json({
@@ -430,9 +560,8 @@ export async function alertRedFlag(req, res, next) {
  */
 export async function getSession(req, res, next) {
   try {
-    const patient = await Patient.findById(
-      req.params.id,
-    );
+    const patient =
+      await Patient.findById(req.params.id);
 
     if (!patient) {
       return res.status(404).json({
