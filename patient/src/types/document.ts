@@ -1,4 +1,8 @@
-export type DocumentCategory = "prescription" | "labReport" | "dischargeSummary" | "scanImaging";
+export type DocumentCategory =
+  | "prescription"
+  | "labReport"
+  | "dischargeSummary"
+  | "scanImaging";
 
 export interface LabValue {
   name: string;
@@ -22,4 +26,10 @@ export interface MedicalDocument {
   uploadedAt: string;
   ocrResult?: OCRResult;
   ocrStatus: "pending" | "processing" | "done" | "failed";
+
+  // Backend storage URL
+  fileUrl?: string;
+
+  // Backend document ID
+  documentId?: string;
 }

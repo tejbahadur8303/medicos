@@ -17,16 +17,29 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  const data = await res.json();
+  const text = await res.text();
+
+  let data: any = {};
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: text || `Request failed: ${res.status}` };
+  }
 
   if (!res.ok) {
     throw new Error(
-      data.message || data.error || `Request failed: ${res.status}`,
+      data.message ||
+        data.error ||
+        `Request failed: ${res.status}`,
     );
   }
 
-  // APIs that return { data: ... }
-  if (data && typeof data === "object" && "data" in data) {
+  if (
+    data &&
+    typeof data === "object" &&
+    "data" in data
+  ) {
     return data.data;
   }
 
@@ -38,28 +51,35 @@ export const api = {
   // Auth
   // =========================
 
-login: (email: string, password: string) =>
-  request<{
-    token: string;
-    doctor: unknown;
-    user?: unknown;
-  }>("/auth/login", "POST", {
-    email,
-    password,
-  }),
+  login: (email: string, password: string) =>
+    request<{
+      token: string;
+      doctor: unknown;
+      user?: unknown;
+    }>("/auth/login", "POST", {
+      email,
+      password,
+    }),
 
   // =========================
   // Doctors
   // =========================
 
-  listDoctors: () => request<{ doctors: unknown[] }>("/doctors", "GET"),
+  listDoctors: () =>
+    request<{ doctors: unknown[] }>("/doctors", "GET"),
 
   getDoctorById: (id: string) =>
-    request<{ doctor: unknown }>(`/doctors/${id}`, "GET"),
+    request<{ doctor: unknown }>(
+      `/doctors/${id}`,
+      "GET",
+    ),
 
-  getAvailableSlots: (id: string, date: string) =>
+  getAvailableSlots: (
+    id: string,
+    date: string,
+  ) =>
     request<{ slots: unknown[] }>(
-      `/doctors/${id}/available-slots?date=${date}`,
+      `/doctors/${id}/available-slots?date=${encodeURIComponent(date)}`,
       "GET",
     ),
 
@@ -76,7 +96,12 @@ login: (email: string, password: string) =>
     },
     token: string,
   ) =>
-    request<{ appointment: unknown }>("/appointments", "POST", payload, token),
+    request<{ appointment: unknown }>(
+      "/appointments",
+      "POST",
+      payload,
+      token,
+    ),
 
   getMyAppointments: (token: string) =>
     request<{ appointments: unknown[] }>(
@@ -86,7 +111,10 @@ login: (email: string, password: string) =>
       token,
     ),
 
-  getAppointmentById: (id: string, token: string) =>
+  getAppointmentById: (
+    id: string,
+    token: string,
+  ) =>
     request<{ appointment: unknown }>(
       `/appointments/${id}`,
       "GET",
@@ -94,7 +122,10 @@ login: (email: string, password: string) =>
       token,
     ),
 
-  cancelAppointment: (id: string, token: string) =>
+  cancelAppointment: (
+    id: string,
+    token: string,
+  ) =>
     request<{ appointment: unknown }>(
       `/appointments/${id}/cancel`,
       "PUT",
@@ -106,7 +137,6 @@ login: (email: string, password: string) =>
   // Patient Intake
   // =========================
 
-  // Create patient immediately after registration
   createSession: (payload: {
     name: string;
     age: number;
@@ -123,13 +153,105 @@ login: (email: string, password: string) =>
       sessionId: string;
       token: string;
       ok: boolean;
-    }>("/patient/session", "POST", payload),
+    }>(
+      "/patient/session",
+      "POST",
+      payload,
+    ),
 
   // Submit completed intake session
-  submitSession: (payload: unknown) =>
-    request<unknown>("/session/submit", "POST", payload),
+  submitSession: (payload: {
+    sessionId?: string;
+    patient?: unknown;
+    consent?: unknown;
+    chiefComplaint?: unknown;
+    historyOfPresentIllness?: unknown;
+    pastHistory?: unknown;
+    medications?: unknown;
+    allergies?: unknown;
+    familyHistory?: unknown;
+    personalHistory?: unknown;
+    reviewOfSystems?: unknown;
+    documents?: unknown[];
+    redFlags?: unknown[];
+    summary?: unknown;
+  }) =>
+    request<{
+      ok: boolean;
+      patientId: string;
+      tokenNumber: string;
+    }>(
+      "/session/submit",
+      "POST",
+      payload,
+    ),
 
-  // Red flag alert
-  alertRedFlag: (payload: { patientId: string; redFlags: unknown[] }) =>
-    request<{ ok: boolean }>("/redflag/alert", "POST", payload),
+  // =========================
+  // Medical Documents
+  // =========================
+
+  // Upload document metadata
+  uploadDocument: (payload: {
+    patientId: string;
+    type:
+      | "Prescription"
+      | "Lab Report"
+      | "Discharge Summary"
+      | "Imaging Report";
+    title?: string;
+    fileUrl: string;
+  }) =>
+    request<{
+      ok: boolean;
+      documentId: string;
+    }>(
+      "/document/upload",
+      "POST",
+      payload,
+    ),
+
+  // Run OCR on uploaded document
+  processDocumentOCR: (documentId: string) =>
+    request<{
+      ok: boolean;
+      extractedData: {
+        fields?: unknown[];
+        diagnosesNoted?: string[];
+        medicationsNoted?: string[];
+      };
+    }>(
+      "/document/ocr",
+      "POST",
+      { documentId },
+    ),
+
+  // Get all documents of a patient
+  getPatientDocuments: (patientId: string) =>
+    request<
+      Array<{
+        id: string;
+        type: string;
+        title: string;
+        date: string;
+        fileUrl: string;
+        extractedData?: unknown;
+      }>
+    >(
+      `/patients/${patientId}/documents`,
+      "GET",
+    ),
+
+  // =========================
+  // Red Flag
+  // =========================
+
+  alertRedFlag: (payload: {
+    patientId: string;
+    redFlags: unknown[];
+  }) =>
+    request<{ ok: boolean }>(
+      "/redflag/alert",
+      "POST",
+      payload,
+    ),
 };

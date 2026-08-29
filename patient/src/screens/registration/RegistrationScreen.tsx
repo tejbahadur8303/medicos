@@ -23,7 +23,7 @@ export default function RegistrationScreen() {
     name.trim().length > 0 &&
     age.trim().length > 0 &&
     gender !== null &&
-    mobile.trim().length >= 10;
+    mobile.trim().length === 10;
 
   const proceed = async (guest = false) => {
     if (loading) return;
@@ -32,8 +32,12 @@ export default function RegistrationScreen() {
       name.trim() || (guest ? "Guest Patient" : "");
 
     const patientAge = age ? parseInt(age, 10) : 0;
-
     const patientMobile = mobile.trim();
+    const patientAbhaId = abhaId.trim();
+
+    if (!guest && !canContinue) {
+      return;
+    }
 
     setLoading(true);
 
@@ -44,7 +48,7 @@ export default function RegistrationScreen() {
         age: patientAge,
         gender: gender || "Other",
         mobileNumber: patientMobile,
-        abhaId: abhaId.trim(),
+        abhaId: patientAbhaId,
         language: patient.language || "en",
         isGuest: guest,
         consent: {
@@ -54,14 +58,29 @@ export default function RegistrationScreen() {
 
       console.log("Patient session created:", response);
 
-      // Save patient + backend session information locally
+      // Make sure backend actually returned session details
+      if (!response.sessionId) {
+        throw new Error(
+          "Backend did not return a patient session ID.",
+        );
+      }
+
+      if (!response.token) {
+        throw new Error(
+          "Backend did not return a patient session token.",
+        );
+      }
+
+      // Save patient information + backend session details
       setPatient({
         name: patientName,
         age: patientAge,
-        gender,
+        gender: gender || "Other",
         mobile: patientMobile,
-        abhaId: abhaId.trim(),
+        abhaId: patientAbhaId,
         isGuest: guest,
+
+        // These are required later during submission
         sessionId: response.sessionId,
         token: response.token,
       });
@@ -70,17 +89,16 @@ export default function RegistrationScreen() {
     } catch (error) {
       console.error("Failed to create patient session:", error);
 
-      // Save locally so kiosk can continue even if backend is unavailable
-      setPatient({
-        name: patientName,
-        age: patientAge,
-        gender,
-        mobile: patientMobile,
-        abhaId: abhaId.trim(),
-        isGuest: guest,
-      });
-
-      navigate("/consent");
+      // IMPORTANT:
+      // Do NOT continue to /consent when backend session creation fails.
+      // Otherwise sessionId will be empty and confirmation will fail.
+      alert(
+        error instanceof Error
+          ? error.message
+          : isHindi
+            ? "Patient session नहीं बन सका। कृपया दोबारा प्रयास करें।"
+            : "Unable to create patient session. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -91,10 +109,13 @@ export default function RegistrationScreen() {
   return (
     <KioskShell step={1} totalSteps={5}>
       <h1 className="font-display text-2xl text-ink">
-        {isHindi ? "अपनी जानकारी दें" : "Tell us about yourself"}
+        {isHindi
+          ? "अपनी जानकारी दें"
+          : "Tell us about yourself"}
       </h1>
 
       <div className="mt-6 space-y-4">
+        {/* Name */}
         <div>
           <label className="mb-1 block text-sm font-medium text-ink/60">
             {isHindi ? "पूरा नाम" : "Full Name"}
@@ -103,14 +124,17 @@ export default function RegistrationScreen() {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none"
+            disabled={loading}
+            className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none disabled:opacity-60"
             placeholder={
               isHindi ? "अपना नाम लिखें" : "Enter your name"
             }
           />
         </div>
 
+        {/* Age + Mobile */}
         <div className="grid grid-cols-2 gap-3">
+          {/* Age */}
           <div>
             <label className="mb-1 block text-sm font-medium text-ink/60">
               {isHindi ? "उम्र" : "Age"}
@@ -119,14 +143,21 @@ export default function RegistrationScreen() {
             <input
               value={age}
               onChange={(e) =>
-                setAge(e.target.value.replace(/\D/g, ""))
+                setAge(
+                  e.target.value
+                    .replace(/\D/g, "")
+                    .slice(0, 3),
+                )
               }
+              disabled={loading}
               inputMode="numeric"
-              className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none"
+              maxLength={3}
+              className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none disabled:opacity-60"
               placeholder={isHindi ? "उम्र" : "Age"}
             />
           </div>
 
+          {/* Mobile */}
           <div>
             <label className="mb-1 block text-sm font-medium text-ink/60">
               {isHindi ? "मोबाइल नंबर" : "Mobile Number"}
@@ -141,13 +172,16 @@ export default function RegistrationScreen() {
                     .slice(0, 10),
                 )
               }
+              disabled={loading}
               inputMode="numeric"
-              className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none"
+              maxLength={10}
+              className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none disabled:opacity-60"
               placeholder="10-digit number"
             />
           </div>
         </div>
 
+        {/* Gender */}
         <div>
           <label className="mb-1 block text-sm font-medium text-ink/60">
             {isHindi ? "लिंग" : "Gender"}
@@ -158,8 +192,9 @@ export default function RegistrationScreen() {
               <button
                 key={g}
                 type="button"
+                disabled={loading}
                 onClick={() => setGender(g)}
-                className={`tap-target rounded-2xl border-2 py-3 text-base font-semibold ${
+                className={`tap-target rounded-2xl border-2 py-3 text-base font-semibold disabled:opacity-60 ${
                   gender === g
                     ? "border-kiosk-500 bg-kiosk-500 text-white"
                     : "border-stone-150 bg-white text-ink"
@@ -171,6 +206,7 @@ export default function RegistrationScreen() {
           </div>
         </div>
 
+        {/* ABHA ID */}
         <div>
           <label className="mb-1 block text-sm font-medium text-ink/60">
             {isHindi
@@ -181,16 +217,18 @@ export default function RegistrationScreen() {
           <input
             value={abhaId}
             onChange={(e) => setAbhaId(e.target.value)}
-            className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none"
+            disabled={loading}
+            className="tap-target w-full rounded-2xl border-2 border-stone-150 px-4 py-3 text-lg focus:border-kiosk-400 focus:outline-none disabled:opacity-60"
             placeholder="XX-XXXX-XXXX-XXXX"
           />
         </div>
       </div>
 
+      {/* Continue */}
       <button
         disabled={!canContinue || loading}
         onClick={() => proceed(false)}
-        className="tap-target mt-6 w-full rounded-2xl bg-kiosk-500 py-4 text-lg font-bold text-white shadow-raised disabled:opacity-40"
+        className="tap-target mt-6 w-full rounded-2xl bg-kiosk-500 py-4 text-lg font-bold text-white shadow-raised disabled:cursor-not-allowed disabled:opacity-40"
       >
         {loading
           ? isHindi
@@ -201,11 +239,12 @@ export default function RegistrationScreen() {
             : "Continue"}
       </button>
 
+      {/* Guest */}
       <button
         type="button"
         disabled={loading}
         onClick={() => proceed(true)}
-        className="tap-target mt-3 w-full rounded-2xl border-2 border-stone-150 bg-white py-3.5 text-base font-semibold text-ink/70 disabled:opacity-40"
+        className="tap-target mt-3 w-full rounded-2xl border-2 border-stone-150 bg-white py-3.5 text-base font-semibold text-ink/70 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {isHindi
           ? "मेहमान के रूप में जारी रखें"
