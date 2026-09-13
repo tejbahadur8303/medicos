@@ -1,8 +1,13 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Stethoscope, PlayCircle } from "lucide-react";
+import { Stethoscope, ArrowRight, HelpCircle, PlayCircle } from "lucide-react";
 import { usePatientStore } from "../../store/usePatientStore";
 import { useHistoryStore } from "../../store/useHistoryStore";
 import { useDocumentStore } from "../../store/useDocumentStore";
+
+// Cycles through how "welcome" is said across languages a patient here
+// might speak — doubles as a preview of the language step that's next.
+const GREETINGS = ["Namaste", "Welcome", "Vanakkam", "Nomoshkar", "Sat Sri Akal"];
 
 export default function WelcomeScreen() {
   const navigate = useNavigate();
@@ -13,6 +18,29 @@ export default function WelcomeScreen() {
   const setAnswer = useHistoryStore((s) => s.setAnswer);
   const addRedFlags = useHistoryStore((s) => s.addRedFlags);
   const addDocument = useDocumentStore((s) => s.addDocument);
+
+  const [mounted, setMounted] = useState(false);
+  const [greetingIndex, setGreetingIndex] = useState(0);
+  const [now, setNow] = useState(new Date());
+
+  // One entrance moment on load — nothing else in the screen animates on its own.
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 60);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(
+      () => setGreetingIndex((i) => (i + 1) % GREETINGS.length),
+      2200
+    );
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const startDemo = () => {
     setLanguage("hi");
@@ -57,32 +85,81 @@ export default function WelcomeScreen() {
     navigate("/summary");
   };
 
+  const timeLabel = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-paper px-6 text-center">
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-kiosk-500 shadow-raised">
-        <Stethoscope size={36} className="text-white" />
-      </div>
-      <h1 className="mt-6 font-display text-4xl text-ink">MediKiosk</h1>
-      <p className="mt-2 text-lg text-ink/60">Your History. Your Voice. Ready for the Doctor.</p>
-      <p className="mt-8 max-w-xs text-base text-ink/70">
-        Let's prepare your medical history before you meet the doctor.
-      </p>
-
-      <button
-        onClick={() => navigate("/language")}
-        className="tap-target mt-10 w-full max-w-xs rounded-2xl bg-kiosk-500 py-4 text-xl font-bold text-white shadow-raised hover:bg-kiosk-600"
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-paper px-6 text-center">
+      {/* Faint ECG-style line grounding the screen in a clinical setting,
+          not just decoration — sits low and quiet behind the content. */}
+      <svg
+        className="pointer-events-none absolute inset-x-0 bottom-24 h-24 w-full text-kiosk-500/10"
+        viewBox="0 0 400 60"
+        preserveAspectRatio="none"
+        aria-hidden="true"
       >
-        START
-      </button>
-      <button className="tap-target mt-3 w-full max-w-xs rounded-2xl border-2 border-stone-150 bg-white py-3.5 text-lg font-semibold text-ink/70">
-        Help
-      </button>
+        <path
+          d="M0 30 H140 L155 30 L165 8 L178 52 L190 30 L205 30 H400"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        />
+      </svg>
 
+      {/* Device status row — reads as a real kiosk, not a webpage */}
+      <div className="absolute top-6 flex items-center gap-2 text-xs font-medium text-ink/40">
+        <span className="h-1.5 w-1.5 rounded-full bg-kiosk-500" />
+        <span>Reception kiosk · {timeLabel}</span>
+      </div>
+
+      <div
+        className={`flex flex-col items-center transition-all duration-700 ease-out ${
+          mounted ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+        }`}
+      >
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-kiosk-500 shadow-raised">
+          <span className="absolute inset-0 rounded-[1.75rem] bg-kiosk-500 animate-ping opacity-20" />
+          <Stethoscope size={34} className="relative text-white" />
+        </div>
+
+        <p
+          key={greetingIndex}
+          className="mt-5 h-6 text-base font-medium text-kiosk-600 transition-opacity duration-500"
+        >
+          {GREETINGS[greetingIndex]}
+        </p>
+
+        <h1 className="mt-1 font-display text-4xl text-ink">MediKiosk</h1>
+        <p className="mt-2 max-w-xs text-base text-ink/60">
+          Your history, in your words — ready before the doctor calls you in.
+        </p>
+      </div>
+
+      <div
+        className={`mt-10 flex w-full max-w-xs flex-col items-center transition-all delay-150 duration-700 ease-out ${
+          mounted ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+        }`}
+      >
+        <button
+          onClick={() => navigate("/language")}
+          className="tap-target flex w-full items-center justify-center gap-2 rounded-2xl bg-kiosk-500 py-4 text-xl font-bold text-white shadow-raised hover:bg-kiosk-600"
+        >
+          Start
+          <ArrowRight size={22} />
+        </button>
+
+        <button className="tap-target mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-stone-150 bg-white py-3.5 text-lg font-semibold text-ink/70">
+          <HelpCircle size={18} />
+          Help
+        </button>
+      </div>
+
+      {/* Discreet demo affordance — deliberately out of the patient's way */}
       <button
         onClick={startDemo}
-        className="mt-8 flex items-center gap-2 text-sm font-medium text-kiosk-600 hover:text-kiosk-700"
+        className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-full border border-stone-150 bg-white/80 px-3 py-1.5 text-xs font-medium text-ink/40 hover:text-kiosk-600"
       >
-        <PlayCircle size={16} /> Try Demo
+        <PlayCircle size={13} />
+        Demo
       </button>
     </div>
   );
